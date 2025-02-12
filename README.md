@@ -1,15 +1,18 @@
 # go-bank
 
-## Building the Project
+## Running the Project
 
-To build the project locally:
+The project uses a Makefile for common operations. To build and run the project:
+
+```bash
+make run
+```
+
+### Alternative Manual Build
+
+If you prefer to build manually:
 
 ```bash
 go build -o bin/gobank
-```
-
-To run the project:
-
-```bash
 ./bin/gobank
 ```
