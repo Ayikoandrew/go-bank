@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -31,6 +32,8 @@ func (s *ServerAPI) run() {
 
 	router.HandleFunc("/account", makeHTTPHandlerFunc(s.handleAccount))
 	router.HandleFunc("/account/{id}", makeHTTPHandlerFunc(s.handleGetAccountById))
+	router.HandleFunc("/delete/{id}", makeHTTPHandlerFunc(s.handleDeleteAccount))
+	router.HandleFunc("/transfer", makeHTTPHandlerFunc(s.handleTransfer))
 
 	log.Println("JSON API server is running on", s.listenAddr)
 
@@ -83,10 +86,40 @@ func (s *ServerAPI) handleAccount(w http.ResponseWriter, r *http.Request) error 
 	if r.Method == http.MethodDelete {
 		return s.handleDeleteAccount(w, r)
 	}
+
+	if r.Method == http.MethodPut {
+		return s.handleUpdateAccount(w, r)
+	}
 	return fmt.Errorf("unsupported method %s", r.Method)
 }
 
+func (s *ServerAPI) handleUpdateAccount(_ http.ResponseWriter, r *http.Request) error {
+	account := new(Account)
+	if err := json.NewDecoder(r.Body).Decode(account); err != nil {
+		return err
+	}
+	defer r.Body.Close()
+
+	return s.store.UpdateAccount(account)
+}
+
 func (s *ServerAPI) handleGetAccountById(w http.ResponseWriter, r *http.Request) error {
+	id, err := getID(r)
+
+	if err != nil {
+		return err
+	}
+
+	if r.Method == http.MethodGet {
+
+		account, err := s.store.GetAccountByID(id)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, account)
+	} else {
+		s.store.DeleteAccount(id)
+	}
 	return nil
 }
 
@@ -112,12 +145,23 @@ func (s *ServerAPI) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 	return writeJSON(w, http.StatusCreated, account)
 }
 
-func (s *ServerAPI) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
-	return nil
+func (s *ServerAPI) handleDeleteAccount(_ http.ResponseWriter, r *http.Request) error {
+	id, err := getID(r)
+	if err != nil {
+		return err
+	}
+	return s.store.DeleteAccount(id)
+
 }
 
 func (s *ServerAPI) handleTransfer(w http.ResponseWriter, r *http.Request) error {
-	return nil
+	trasferReq := new(TransferRequest)
+	if err := json.NewDecoder(r.Body).Decode(trasferReq); err != nil {
+		return err
+	}
+	defer r.Body.Close()
+
+	return writeJSON(w, http.StatusOK, trasferReq)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) error {
@@ -128,7 +172,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 }
 
 type apiError struct {
-	Error string
+	Error string `json:"error"`
 }
 
 type apiFunc func(http.ResponseWriter, *http.Request) error
@@ -139,4 +183,14 @@ func makeHTTPHandlerFunc(f apiFunc) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, apiError{Error: err.Error()})
 		}
 	}
+}
+
+func getID(r *http.Request) (int, error) {
+	idStr := mux.Vars(r)
+	id, err := strconv.Atoi(idStr["id"])
+	if err != nil {
+		return id, err
+	}
+
+	return id, nil
 }
